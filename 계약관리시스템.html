@@ -1694,12 +1694,14 @@ function monthlyHTML(){
     '<span style="font-size:11px;color:#888">또는</span>'+
     '<input class="inp" id="mmonth-new" placeholder="26-6" style="width:70px;font-size:12px;padding:6px 8px" title="새 월 입력 후 Enter">'+
     '<button class="btn-s" id="mmonth-add" style="font-size:11px;padding:5px 8px">+ 추가</button>'+
-    // ★ 거래내역 업로드 + 리셋
-    (isA?'<button class="btn-p" id="mupload" style="font-size:11px">📂 거래내역 업로드</button>'+
+    // ★ 통장 업로드 1(기준, 미매칭 0처리) / 2(추가, 기존값 유지) + 저장/초기화
+    (isA?'<button class="btn-p" id="mupload1" style="font-size:11px">📂 통장 업로드1</button>'+
+         '<button class="btn-p" id="mupload2" style="font-size:11px">📂 통장 업로드2</button>'+
          '<button class="btn-p" id="msave" style="font-size:11px;background:linear-gradient(135deg,#27ae60,#229954)">💾 저장</button>'+
          '<button class="btn-s" id="mreset" style="font-size:11px;color:#e74c3c;border-color:#e74c3c">🔄 초기화</button>':'')+
     (G.uploadMsg?'<span style="font-size:11px;color:#27ae60">'+G.uploadMsg+'</span>':'')+
   '</div>'+
+  (isA?'<div class="info-box" style="margin-bottom:12px">📂 통장 업로드1은 기준 통장(미매칭 항목 0원 처리), 통장 업로드2는 보조 통장(미매칭 항목은 기존 값 유지) — 두 은행 거래내역을 나눠서 올릴 때 순서대로 사용하세요</div>':'')+
   // 통계 카드
   '<div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">'+
     '<div class="scard" style="border-left-color:#2980b9"><div class="sl">📋 사무실 지출</div><div class="sv">₩'+W(leftTotal)+'</div></div>'+
@@ -1714,23 +1716,23 @@ function monthlyHTML(){
 }
 
 // ====================== 거래내역 파싱 ======================
-function parseMonthlyExcel(filename, arrayBuffer){
+function parseMonthlyExcel(filename, arrayBuffer, resetUnmatched){
   // ★ 농협 xls / 기업은행 xlsx 거래내역 파싱 → 매달납부 금액 자동 반영
   var bytes=new Uint8Array(arrayBuffer);
   var isXls=(bytes[0]===0xD0&&bytes[1]===0xCF); // CFB magic
   
   if(isXls){
-    parseNhXls(bytes);
+    parseNhXls(bytes, resetUnmatched);
   } else {
     // xlsx: SheetJS 사용
     if(!window.XLSX){alert("xlsx 라이브러리 로딩 실패");return;}
     var wb=window.XLSX.read(arrayBuffer,{type:"array"});
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=window.XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-    parseRowsToMonthly(rows, filename);
+    parseRowsToMonthly(rows, filename, resetUnmatched);
   }
 }
-function parseNhXls(bytes){
+function parseNhXls(bytes, resetUnmatched){
   // CFB → Workbook 스트림 추출 → BIFF8 파싱
   var dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
   var sectorSize=Math.pow(2, dv.getUint16(30,true));
@@ -1811,10 +1813,9 @@ function parseNhXls(bytes){
       }
     }
     pos+=4+rlen;
-    if(rlen===0)break;
+    // ★ 버그 수정: rlen===0(BOF/EOF 경계 등)에서 멈추면 실제 거래내역이 있는
+    //   Worksheet 서브스트림까지 도달하지 못해 SST가 일부만 읽힘. 멈추지 않고 끝까지 스캔.
   }
-  
-  // 셀 데이터 파싱 (row,col,value)
   var cells={};
   pos=0;
   while(pos<wbData.length-4){
@@ -1854,10 +1855,8 @@ function parseNhXls(bytes){
       }
     }
     pos+=4+rlen;
-    if(rlen===0)break;
+    // ★ 버그 수정: 위와 동일한 이유로 여기서도 멈추지 않고 끝까지 스캔 (실거래내역 누락 방지)
   }
-  
-  // 출금 내역 추출 (농협: col3=출금, col6=거래내용, col7=거래기록사항)
   var withdrawals=[];
   var rowNums=Object.keys(cells).map(Number).sort(function(a,b){return a-b;});
   console.log('[NH XLS] SST:', sstStrings.length, '셀행수:', rowNums.length, '범위:', rowNums[0], '~', rowNums[rowNums.length-1]);
@@ -1875,21 +1874,24 @@ function parseNhXls(bytes){
   }
   console.log('[NH XLS] 총 출금내역:', withdrawals.length, '건');
   
-  applyMatchRules(withdrawals);
+  applyMatchRules(withdrawals, resetUnmatched);
 }
-function parseRowsToMonthly(rows, filename){
+function parseRowsToMonthly(rows, filename, resetUnmatched){
   // xlsx 거래내역 (기업은행 등)
-  var ci={out:2,desc:5,content:4}; // 기본값
+  var ci={out:2,desc:5,content:4}; // 기본값 (헤더를 못 찾았을 때만 사용하는 폴백)
   var dataStart=3;
   for(var ri=0;ri<Math.min(rows.length,8);ri++){
     var row=rows[ri]||[];
+    var rowHasOutHeader=false; // ★ 버그 수정: 이 행에서 실제로 "출금" 헤더를 찾았을 때만 true
     for(var cj=0;cj<row.length;cj++){
       var v=String(row[cj]||"").replace(/\s/g,"");
-      if(v==="출금"||v==="출금금액") ci.out=cj;
+      if(v==="출금"||v==="출금금액"){ci.out=cj;rowHasOutHeader=true;}
       if(v.indexOf("거래내용")>=0||v.indexOf("적요")>=0) ci.desc=cj;
       if(v.indexOf("거래기록")>=0||v.indexOf("상대")>=0) ci.content=cj;
     }
-    if(ci.out>=0){dataStart=ri+1;break;}
+    // ★ 버그 수정: 기존 코드는 ci.out의 기본값(2)이 항상 0 이상이라 첫 행(제목/메모 행)에서
+    //   곧바로 멈춰버려 실제 헤더 행을 스캔하지 못했음. 이제는 진짜 헤더를 찾았을 때만 멈춤.
+    if(rowHasOutHeader){dataStart=ri+1;break;}
   }
   var withdrawals=[];
   for(var ri=dataStart;ri<rows.length;ri++){
@@ -1899,9 +1901,10 @@ function parseRowsToMonthly(rows, filename){
     var content=String(row[ci.content]||"").trim();
     if(amt>0&&(desc||content)) withdrawals.push({amt:amt,desc:desc,content:content});
   }
-  applyMatchRules(withdrawals);
+  applyMatchRules(withdrawals, resetUnmatched);
 }
-function applyMatchRules(withdrawals){
+function applyMatchRules(withdrawals, resetUnmatched){
+  if(resetUnmatched===undefined) resetUnmatched=true; // 기본값: 기존 동작 유지
   monSnapshot(); // 업로드 전 스냅샷
 
   // ★ 납부목록 xlsx가 로드됐으면 그 항목 기준으로, 아니면 기본 규칙 사용
@@ -2019,20 +2022,21 @@ function applyMatchRules(withdrawals){
       setMA(monthKey, item.sub, item.name, r.found.amt);
       matched.push({name:item.name, amt:r.found.amt, desc:r.found.desc||r.found.content});
     } else {
-      setMA(monthKey, item.sub, item.name, 0);
+      if(resetUnmatched) setMA(monthKey, item.sub, item.name, 0);
       unmatched.push(item.name);
     }
   });
 
   saveMonthlyEdits(); // 업로드 후 자동 저장
-  G.uploadMsg = "✅ " + matched.length + "개 자동 반영 / " + unmatched.length + "개 미매칭(0)";
+  var unmatchedLabel = resetUnmatched ? (unmatched.length+"개 미매칭(0)") : (unmatched.length+"개 미매칭(기존값 유지)");
+  G.uploadMsg = "✅ " + matched.length + "개 자동 반영 / " + unmatchedLabel;
   R();
 
   var msg = "✅ 거래내역 분석 완료! ";
   msg += " [반영 " + matched.length + "개] ";
   matched.forEach(function(m){ msg += m.name + " (" + m.amt.toLocaleString() + ") "; });
   if(unmatched.length){
-    msg += " / [0 처리 " + unmatched.length + "개] ";
+    msg += resetUnmatched ? " / [0 처리 " + unmatched.length + "개] " : " / [기존값 유지 " + unmatched.length + "개] ";
     unmatched.forEach(function(n){ msg += n + " "; });
   }
   alert(msg);
@@ -2376,30 +2380,35 @@ function bindMonthly(){
     G.uploadMsg="🔄 "+G.mMonth+"월 초기화 완료";R();
   };
 
-  // ★ 거래내역 업로드
-  if(g("mupload"))g("mupload").onclick=function(){
-    var inp=document.createElement("input");
-    inp.type="file";inp.accept=".xlsx,.xls,.csv";
-    inp.onchange=function(){
-      if(!inp.files[0])return;
-      var file=inp.files[0];
-      function readFile(f){
-        var reader=new FileReader();
-        reader.onload=function(ev){
-          try{parseMonthlyExcel(f.name,ev.target.result);}
-          catch(err){alert("파싱 오류: "+err.message);}
-        };
-        reader.readAsArrayBuffer(f);
-      }
-      if(!window.XLSX){
-        var s=document.createElement("script");
-        s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-        s.onload=function(){readFile(file);};
-        document.head.appendChild(s);
-      } else {readFile(file);}
+  // ★ 통장 업로드1(기준, 미매칭 0처리) / 통장 업로드2(보조, 미매칭 기존값 유지)
+  function bindUploadBtn(btnId, resetUnmatched){
+    if(!g(btnId))return;
+    g(btnId).onclick=function(){
+      var inp=document.createElement("input");
+      inp.type="file";inp.accept=".xlsx,.xls,.csv";
+      inp.onchange=function(){
+        if(!inp.files[0])return;
+        var file=inp.files[0];
+        function readFile(f){
+          var reader=new FileReader();
+          reader.onload=function(ev){
+            try{parseMonthlyExcel(f.name,ev.target.result,resetUnmatched);}
+            catch(err){alert("파싱 오류: "+err.message);}
+          };
+          reader.readAsArrayBuffer(f);
+        }
+        if(!window.XLSX){
+          var s=document.createElement("script");
+          s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+          s.onload=function(){readFile(file);};
+          document.head.appendChild(s);
+        } else {readFile(file);}
+      };
+      inp.click();
     };
-    inp.click();
-  };
+  }
+  bindUploadBtn("mupload1", true);
+  bindUploadBtn("mupload2", false);
 
   // 금액 입력
   document.querySelectorAll(".mnth-inp").forEach(function(inp){
