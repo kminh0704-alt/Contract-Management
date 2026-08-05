@@ -1327,7 +1327,7 @@ function extraFeesHTML(){
         '<td><b>'+e.assignee+'</b></td>'+
         '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+e.prop+'">'+e.prop+'</td>'+
         '<td style="max-width:200px;color:#555;font-size:11px">'+(e.content?'<div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;line-height:1.4">'+e.content+'</div>':'<span style="color:#ddd">-</span>')+'</td>'+
-        '<td><span class="badge" style="background:#8e44ad">'+e.month+'</span></td>'+
+        '<td><span class="badge ef-goto-sal" data-month="'+e.month+'" style="background:#8e44ad;cursor:pointer" title="클릭하면 급여정산 '+e.month+'월로 이동">'+e.month+'</span></td>'+
         '<td style="font-weight:800;color:#e74c3c">₩'+W(e.amt)+'</td>'+
         '<td style="color:#888;font-size:11px">'+e.note+'</td>'+
         (u.role==="admin"?'<td><button class="btn-del efdel" data-eid="'+e.id+'" onclick="event.stopPropagation()">삭제</button></td>':'')+
@@ -1338,8 +1338,10 @@ function extraFeesHTML(){
     '<div class="scard" style="border-left-color:#e74c3c"><div class="sl">💰 필터 합계</div><div class="sv">₩'+W(total)+'</div></div>'+
     '<div class="scard" style="border-left-color:#27ae60"><div class="sl">💰 전체 합계</div><div class="sv">₩'+W(EXTRAFEES.reduce(function(s,e){return s+(e.amt||0);},0))+'</div></div>'+
   '</div>'+
+  '<div class="info-box">🏷 적용월 클릭 → 급여정산 해당 월로 이동 (기타수수료 자동 합산 반영)</div>'+
   '<div class="fbar"><input class="inp" style="flex:1;min-width:180px" id="efs" placeholder="🔍 계약물건·담당자 검색..." value="'+G.efSearch+'">'+
   '<button class="btn-p" id="efadd">＋ 기타수수료 등록</button>'+
+  (u.role==="admin"?'<button class="btn-p" id="ef_save" style="font-size:11px;background:linear-gradient(135deg,#27ae60,#229954)">💾 저장</button>':'')+
   (u.role==="admin"?'<button class="btn-s" id="efexport" style="font-size:11px">📥 CSV</button>':'')+
   '</div>'+
   '<div class="card"><div class="tbl-wrap"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
@@ -1390,6 +1392,16 @@ function salaryHTML(){
       monLeftTotal+=getMA(G.mMonth,it.sub,it.name,it.amt||0);
   });
   if(monLeftTotal>0) d.eo=monLeftTotal;
+
+  // ★ 기타수수료 자동반영 (기타수수료 탭에 등록된 항목 중 급여정산 월과 일치하는 것 합산)
+  var efMatchTotal=0, efMemos=[];
+  EXTRAFEES.forEach(function(e){
+    if(e.month===d.month){
+      efMatchTotal+=(e.amt||0);
+      if(e.prop) efMemos.push(e.prop);
+    }
+  });
+  if(efMatchTotal>0){ d.ro=efMatchTotal; d.ro_memo=efMemos.join(", "); }
 
   var rev    = d.rr + d.ro;
   var emTotal = d.emItems.reduce(function(s,it){return s+(Number(it.amt)||0);},0);
@@ -2203,6 +2215,27 @@ function bindExtraFees(){
   if(g("efs"))g("efs").oninput=function(){G.efSearch=this.value;R();};
   if(g("efadd"))g("efadd").onclick=function(){G.efEdit=null;G.efModal=true;R();};
   if(g("efexport"))g("efexport").onclick=exportEfCSV;
+  if(g("ef_save"))g("ef_save").onclick=function(){
+    if(window.fbSaveExtraFees) window.fbSaveExtraFees(EXTRAFEES);
+    var btn=g("ef_save");
+    if(btn){btn.textContent="✅ 저장됨";setTimeout(function(){if(g("ef_save"))g("ef_save").textContent="💾 저장";},2000);}
+  };
+  // ★ 적용월 클릭 → 급여정산 탭의 해당 월로 이동 (기타수수료가 자동 합산되어 반영됨)
+  document.querySelectorAll(".ef-goto-sal").forEach(function(b){
+    b.onclick=function(ev){
+      ev.stopPropagation();
+      var m=this.dataset.month;
+      if(SAL.month!==m){
+        saveSAL();
+        SAL.month=m;
+        try{localStorage.setItem("gg_last_month",m);}catch(e){}
+        loadSAL(m);
+        recalcRR();
+      }
+      G.tab="salary";
+      R();
+    };
+  });
   document.querySelectorAll(".efrow").forEach(function(row){
     row.onclick=function(){
       var id=Number(this.dataset.eid);
