@@ -800,14 +800,27 @@ function applySavedSal(saved,month){
   if(saved.staff&&saved.staff.length>0) SAL.staff=saved.staff;
 }
 function loadSAL(month){
+  var foundLocal=false;
   // 1) 로컬 캐시가 있으면 우선 즉시 반영 (화면이 비어보이지 않도록)
   try{
     var sd=localStorage.getItem(salKey(month));
-    if(sd) applySavedSal(JSON.parse(sd),month);
+    if(sd){ applySavedSal(JSON.parse(sd),month); foundLocal=true; }
     var sp=localStorage.getItem(salPctKey(month));
     if(sp) G.salIncPct=JSON.parse(sp);
     else G.salIncPct={};
   }catch(e){}
+  // ★ 버그 수정: 이 달에 저장된 데이터가 로컬에 없으면(=한 번도 저장 안 한 새 달) SAL 객체를
+  //   초기화하지 않고 그냥 두면, 방금 전에 보고 있던 다른 달의 값(기타수수료 등)이 그대로
+  //   남아서 엉뚱한 달에 표시되는 문제가 있었음. 저장된 값이 없으면 0으로 초기화.
+  //   (Firestore에서 나중에 데이터가 오면 아래 2)에서 다시 정확히 채워짐)
+  if(!foundLocal){
+    SAL.month=month;
+    SAL.rr=0; SAL.ro=0; SAL.ro_memo='';
+    SAL.eo=0; SAL.ea=0; SAL.ed=0; SAL.em=0; SAL.em_memo='';
+    SAL.emItems=undefined;
+    // 직원 기본급(base)/이름은 유지하고, 인센티브(inc)만 매달 새로 입력하도록 0으로 초기화
+    if(SAL.staff) SAL.staff=SAL.staff.map(function(s){return Object.assign({},s,{inc:0});});
+  }
   // 2) ★ 로컬 캐시가 없거나(=다른 기기/브라우저에서 저장한 경우) 오래됐을 수 있으므로
   //    서버(Firestore)에서 해당 월의 최신 데이터를 다시 받아와 반영한다.
   //    (기존에는 로컬 캐시에 없으면 아무 것도 안 하고 조용히 기본값 그대로 남아있어,
