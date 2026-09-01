@@ -956,11 +956,16 @@ function getColVals(field){
   return keys;
 }
 function applyAllFilters(list){
-  // ★ 직원(staff)은 본인 이름이 포함된 계약만 표시
+  // ★ 직원(staff)은 기본적으로 본인 이름이 포함된 계약만 표시
+  //   단, 강일임/강재미/송예경/김은미 네 명의 계약 건은 이 네 명끼리는 서로 다 볼 수 있음
+  //   (그 외 관리자만 다루는 계약은 절대 노출되지 않음 - 기존 본인 이름 매칭만 적용)
   if(G.user&&G.user.role==="staff"){
+    var SHARED_STAFF=["강일임","강재미","송예경","김은미"];
     var myName=G.user.name.replace(/ 실장님?| 직원| 소장님?/g,"").trim();
     list=list.filter(function(c){
-      return c.assignee&&c.assignee.indexOf(myName)>=0;
+      if(!c.assignee) return false;
+      if(SHARED_STAFF.some(function(n){return c.assignee.indexOf(n)>=0;})) return true;
+      return c.assignee.indexOf(myName)>=0;
     });
   }
   // ★ 검색어 필터
