@@ -1619,6 +1619,8 @@ function monthlyHTML(){
     if(it.sub==="정육") isLeft=false;
     // ★ "+ 추가"로 새로 만든 기타 항목(이름이 비어있으면 LEFT_NAMES와 항상 매칭되는 버그가 있어 무조건 오른쪽으로 고정)
     if(it.sub==="기타") isLeft=false;
+    // ★ "+ 추가"로 새로 만든 사무실 지출 항목은 무조건 왼쪽으로 고정 (이름이 비어있어도 안전하게 분류)
+    if(it.sub==="사무실추가") isLeft=true;
     // 컨설팅, 하이스트월세(김민학)는 오른쪽
     if(it.name.indexOf("컨설팅")>=0||it.name.indexOf("김민학")>=0) isLeft=false;
     if(isLeft) leftIdxs.push(idx);
@@ -1638,17 +1640,21 @@ function monthlyHTML(){
     var ca=getMA(sel,it.sub,it.name,it.amt||0);
     var redStyle=ca===0?"color:#ccc":"";
     return '<tr class="mnth-tr">'+
-      '<td class="mnth-td-name"'+(delBtn?' style="display:flex;align-items:center;gap:4px"':'')+'>'+
+      '<td class="mnth-td-name">'+
         (delBtn&&isA?
-          '<span style="font-size:10px;color:#bbb;white-space:nowrap">'+(it.sub||"")+'</span>'+
-          '<input class="mright-name" data-idx="'+idx+'" placeholder="내용 입력..." value="'+(it.name||"")+'" style="flex:1;min-width:0;border:1px solid #d0d0d0;border-radius:5px;font-size:12px;padding:3px 6px">':
+          '<div style="display:flex;align-items:center;gap:4px">'+
+            '<span style="font-size:10px;color:#bbb;white-space:nowrap">'+(it.sub||"")+'</span>'+
+            '<input class="mright-name" data-idx="'+idx+'" placeholder="내용 입력..." value="'+(it.name||"")+'" style="flex:1;min-width:0;border:1px solid #d0d0d0;border-radius:5px;font-size:12px;padding:3px 6px">'+
+          '</div>':
           ('<span style="font-size:10px;color:#bbb;margin-right:4px">'+it.sub+'</span>'+it.name))+
       '</td>'+
-      '<td class="mnth-td-amt"'+(delBtn?' style="display:flex;align-items:center;justify-content:flex-end;gap:6px"':'')+'>'+
-        (isA?
-          '<input class="mnth-inp num-inp" type="text" inputmode="numeric" value="'+numFmt(ca)+'" data-sel="'+sel+'" data-sub="'+it.sub+'" data-name="'+it.name+'" style="'+redStyle+'">':
-          '<span style="font-weight:700;'+redStyle+'">'+W(ca)+'</span>')+
-        (delBtn&&isA?'<button class="mright-del" data-idx="'+idx+'" type="button" style="border:none;background:none;color:#bbb;cursor:pointer;font-size:13px;padding:0 2px">✕</button>':'')+
+      '<td class="mnth-td-amt">'+
+        '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">'+
+          (isA?
+            '<input class="mnth-inp num-inp" type="text" inputmode="numeric" value="'+numFmt(ca)+'" data-sel="'+sel+'" data-sub="'+it.sub+'" data-name="'+it.name+'" style="'+redStyle+'">':
+            '<span style="font-weight:700;'+redStyle+'">'+W(ca)+'</span>')+
+          (delBtn&&isA?'<button class="mright-del" data-idx="'+idx+'" type="button" style="border:none;background:none;color:#bbb;cursor:pointer;font-size:13px;padding:0 2px">✕</button>':'')+
+        '</div>'+
       '</td>'+
     '</tr>';
   }
@@ -1657,10 +1663,13 @@ function monthlyHTML(){
   var leftHTML='<div class="mnth-panel">'+
     '<div class="mnth-panel-hd" style="background:linear-gradient(135deg,#2980b9,#2471a3)">'+
       '<span>📋 사무실 지출</span>'+
-      '<span style="font-size:11px;opacity:.8">소계 ₩'+W(leftTotal)+'</span>'+
+      '<span style="font-size:11px;display:flex;align-items:center;gap:8px">'+
+        (isA?'<button id="mleft_add" type="button" style="border:1px solid #fff;color:#fff;background:rgba(255,255,255,.15);border-radius:6px;font-size:11px;padding:2px 8px;cursor:pointer">+ 추가</button>':'')+
+        '소계 ₩'+W(leftTotal)+
+      '</span>'+
     '</div>'+
     '<table class="mnth-tbl">'+
-    '<tbody>'+leftIdxs.map(function(i){return makeRow(items[i],i,false);}).join("")+'</tbody>'+
+    '<tbody>'+leftIdxs.map(function(i){return makeRow(items[i],i,true);}).join("")+'</tbody>'+
     '<tfoot><tr><td class="mnth-td-name" style="font-weight:800;color:#2980b9">합 계</td>'+
       '<td class="mnth-td-amt" style="font-weight:900;color:#2980b9;font-size:14px">₩'+W(leftTotal)+'</td></tr></tfoot>'+
     '</table>'+
@@ -1919,9 +1928,10 @@ function applyMatchRules(withdrawals, resetUnmatched){
   var NAME_KW = {
     "반찬값":                        ["김태환","행복예찬"],
     "전기요금":                      ["전기료","한국전력","전기요금"],
-    "삼성sds 전화기":                ["삼성에스디에","삼성sds"],
-    "삼성sds 전화기 부가서비스":      [], // ★ 자동 매칭 안 함
+    "삼성sds 전화기":                [], // ★ 은행별로 아래 BANK_KW에서 별도 처리
+    "삼성sds 전화기 부가서비스":      [], // ★ 은행별로 아래 BANK_KW에서 별도 처리
     "s k 쉴더스":                    ["SK쉴더스","쉴더스"],
+    "s k 쉴더스(캡스, cctv)":        ["SK쉴더스","쉴더스","SK쉴더스동수원월정료"],
     "음식물쓰레기 관리비":            ["E편한세상광교","편한세상광교입주자"],
     "복합기":                        ["피앤알솔루션","카피어"],
     "삼성 화재":                     ["삼성화"],
@@ -1960,6 +1970,15 @@ function applyMatchRules(withdrawals, resetUnmatched){
     return false;
   }
 
+  // ★ 은행(통장)별 전용 키워드 - 같은 문구라도 통장 업로드1/2에 따라 다른 항목에 매칭
+  //   (통장1=농협: "삼성에스디에" 거래는 부가서비스 소액 / 통장2=기업은행: "삼성에스디에" 거래는 전화기 본요금)
+  var BANK_KW = {
+    // resetUnmatched===true → 통장 업로드1
+    true:  { "삼성sds 전화기 부가서비스": ["삼성에스디에","삼성sds"] },
+    // resetUnmatched===false → 통장 업로드2
+    false: { "삼성sds 전화기":           ["삼성에스디에","삼성sds"] },
+  };
+
   function matchItem(name, sub, baseAmt){
     // 이 항목에 대한 키워드 목록
     var kws = [];
@@ -1969,6 +1988,13 @@ function applyMatchRules(withdrawals, resetUnmatched){
       // ★ 정확히 일치할 때만 (부분 매칭 금지 - 항목 간 키워드 섞임 방지)
       if(nameL === k.toLowerCase()){
         NAME_KW[k].forEach(function(kw){ if(kws.indexOf(kw)<0) kws.push(kw); });
+      }
+    });
+    // ★ 통장(은행)별 전용 키워드 추가
+    var bankKw = BANK_KW[resetUnmatched] || {};
+    Object.keys(bankKw).forEach(function(k){
+      if(nameL === k.toLowerCase()){
+        bankKw[k].forEach(function(kw){ if(kws.indexOf(kw)<0) kws.push(kw); });
       }
     });
     // LOADED_MONTHLY_ITEMS에서 이 항목의 keywords도 추가
@@ -2008,8 +2034,17 @@ function applyMatchRules(withdrawals, resetUnmatched){
     });
   }
 
-  // ★ 고정 항목 - 거래내역으로 절대 변경하지 않음
-  var FIXED_NAMES=["102호 월세","102호 월세(현금)","103호 뒤 사무실 월세","이유진 하이스트 월세","김민학 하이스트 월세"];
+  // ★ 구체적인 키워드를 가진 항목(예: 부가서비스)을 먼저 매칭시켜, 더 넓은 범위의 키워드를 가진
+  //   항목(예: 삼성sds 전화기)이 먼저 가로채가지 않도록 처리 순서를 조정
+  var PRIORITY_NAMES=["삼성sds 전화기 부가서비스","s k 쉴더스(캡스, cctv)"];
+  itemList = itemList.slice().sort(function(a,b){
+    var ap=PRIORITY_NAMES.indexOf(a.name)>=0?0:1;
+    var bp=PRIORITY_NAMES.indexOf(b.name)>=0?0:1;
+    return ap-bp;
+  });
+
+  // ★ 고정 항목 - 거래내역으로 절대 변경하지 않음 (항상 현재 값을 그대로 유지)
+  var FIXED_NAMES=["102호 월세","102호 월세-현금부분","103호 뒤 사무실 월세","이유진 하이스트 월세","김민학 하이스트 월세"];
 
   itemList.forEach(function(item){
     // 고정 항목은 건드리지 않음
@@ -2416,6 +2451,16 @@ function bindMonthly(){
     inp.onchange=function(){monSnapshot();setMA(this.dataset.sel,this.dataset.sub,this.dataset.name,numParse(this.value));R();};
   });
 
+  // ★ 사무실 지출 항목 추가 (기존 mright-del/mright-name 핸들러가 idx 기반이라 왼쪽 행에도 그대로 적용됨)
+  if(g("mleft_add"))g("mleft_add").onclick=function(e){
+    e.stopPropagation();
+    monSnapshot();
+    if(!MONTHLY[G.mMonth])MONTHLY[G.mMonth]=[];
+    MONTHLY[G.mMonth].push({cat:"사무실",sub:"사무실추가",name:"",amt:0});
+    try{localStorage.setItem("gg_monthly_extra", JSON.stringify(MONTHLY));}catch(e2){}
+    if(window.fbSaveMonthlyStructure) window.fbSaveMonthlyStructure(MONTHLY);
+    R();
+  };
   // ★ 기타 항목 추가/삭제/이름 수정
   if(g("mright_add"))g("mright_add").onclick=function(e){
     e.stopPropagation();
