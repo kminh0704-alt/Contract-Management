@@ -326,6 +326,21 @@ window.fbLoadExtraFees = async function(){
   return null;
 };
 
+// ========== 접속 승인 (사무실 외부 접속) ==========
+window.fbAccessGet = async function(id){
+  var s = await getDoc(doc(db,"accessApprovals",id));
+  return s.exists() ? s.data() : null;
+};
+window.fbAccessSet = async function(id,data){
+  await setDoc(doc(db,"accessApprovals",id),data,{merge:true});
+};
+window.fbAccessList = async function(){
+  var s = await getDocs(collection(db,"accessApprovals"));
+  var a=[];
+  s.forEach(function(d){var x=d.data();x._id=d.id;a.push(x);});
+  return a;
+};
+
 // ========== 앱 시작 시 Firestore에서 데이터 로드 ==========
 window.fbLoaded = false;
 window.fbInit = async function(){
@@ -423,7 +438,7 @@ document.addEventListener("DOMContentLoaded", function(){
 var ACCS=[
   {id:"admin",pw:"admin159357",name:"이유진 소장",role:"admin"},
   {id:"ilim",pw:"ilim1234",name:"강일임 실장",role:"staff"},
-  {id:"jaemi",pw:"jaemi1234",name:"강재미 실장",role:"staff"},
+  {id:"jaemi",pw:"jaemi12347777",name:"강재미 실장",role:"staff"},
   {id:"ssong85",pw:"ssong5678",name:"송예경 직원",role:"staff"},
   {id:"eunmi",pw:"eunmi8194",name:"김은미 직원",role:"staff"},
 ];
@@ -878,7 +893,10 @@ var G={user:null,tab:"contracts",cModal:false,cEdit:null,cSearch:"",
     var lid=localStorage.getItem("gg_login_id");
     if(lid){
       var acc=ACCS.find(function(a){return a.id===lid;});
-      if(acc) G.user=acc;
+      if(acc){
+        if(acc.role==="admin") G.user=acc;
+        else window._restoreAcc=acc; // 직원은 접속 확인(사무실 IP/승인) 후 복원
+      }
     }
   }catch(e){}
 })();
@@ -1200,7 +1218,12 @@ function bindLogin(){
   function doLogin(){
     var id=g("lid").value,pw=g("lpw").value,acc=null;
     for(var i=0;i<ACCS.length;i++){if(ACCS[i].id===id&&ACCS[i].pw===pw){acc=ACCS[i];break;}}
-    if(acc){G.user=acc;try{localStorage.setItem("gg_login_id",acc.id);}catch(e){}R();}
+    if(acc){
+      if(_loginBusy)return;
+      var le0=g("lerr");if(le0)le0.classList.add("hide");
+      if(acc.role==="admin"){_finishLogin(acc,0);}
+      else{_loginBusy=true;if(g("lbtn"))g("lbtn").textContent="확인 중…";_gateAndEnter(acc,false);}
+    }
     else{var e=g("lerr");e.classList.remove("hide");e.textContent="아이디 또는 비밀번호가 틀렸습니다.";}
   }
   g("lbtn").onclick=doLogin;
@@ -1220,6 +1243,7 @@ function mainHTML(){
     '<div class="hlogo"><div class="hlogo-icon">🏠</div><span class="hlogo-name">광교이편한세상</span><span class="hlogo-sub">&nbsp;| 계약관리시스템</span></div>'+
     '<div class="hright"><div class="ubadge">👤 '+(u.role==="admin"?"관리자":u.name)+'</div>'+
     (u.role==="admin"?(
+      '<button class="logbtn" id="access-btn" style="margin-right:4px" title="사무실 외부 접속 승인">🔔 접속승인 <span id="access-badge">0</span></button>'+
       '<button class="logbtn" id="backup-btn" style="margin-right:4px">💾 백업</button>'+
       '<button class="logbtn" id="restore-btn" style="margin-right:4px">📥 복원</button>'+
       '<input type="file" id="restore-file" accept=".json" style="display:none">'+
@@ -2185,7 +2209,8 @@ function loadMonthlyList(file){
 // ====================== 바인딩 ======================
 function toggleIncHide(i){G.salHideInc[i]=!G.salHideInc[i];R();}
 function bindMain(){
-  if(g("logout-btn"))g("logout-btn").onclick=function(){G.user=null;try{localStorage.removeItem("gg_login_id");}catch(e){}ddReset();_history=[];R();};
+  if(g("logout-btn"))g("logout-btn").onclick=function(){G.user=null;try{localStorage.removeItem("gg_login_id");}catch(e){}accessCleanup();ddReset();_history=[];R();};
+  if(g("access-btn")){g("access-btn").onclick=openAccessAdmin;_applyAccessBadge();_startAdminAccessPoll();}
   if(g("backup-btn"))g("backup-btn").onclick=exportFullBackup;
   if(g("excel-btn"))g("excel-btn").onclick=exportFullExcel;
   if(g("restore-btn"))g("restore-btn").onclick=function(){var f=g("restore-file");if(f)f.click();};
@@ -2691,8 +2716,296 @@ function exportEfCSV(){
   try{localStorage.setItem("sal_2026-05","{\"month\": \"2026-05\", \"rr\": 45097280, \"ro\": 925000, \"ro_memo\": \"18-1102 \ub300\ucd9c, 11-3002 \uc774\uc0ac\ube44\", \"eo\": 8021214, \"ea\": 900000, \"ed\": 409000, \"em\": 1033500, \"em_memo\": \"\", \"hideProfit\": false, \"staff\": [{\"name\": \"\uac15\uc77c\uc784 \uc2e4\uc7a5\ub2d8\", \"base\": 1500000, \"inc\": 4370784, \"incType\": \"amount\", \"showInc\": true}, {\"name\": \"\uac15\uc7ac\ubbf8 \uc2e4\uc7a5\ub2d8\", \"base\": 1500000, \"inc\": 3500000, \"incType\": \"amount\", \"showInc\": true}, {\"name\": \"\uc1a1\uc608\uacbd\", \"base\": 1200000, \"inc\": 300000, \"incType\": \"amount\", \"showInc\": true}, {\"name\": \"\uae40\uc740\ubbf8\", \"base\": 1320000, \"inc\": 380000, \"incType\": \"amount\", \"showInc\": true}, {\"name\": \"\uae40\ubbfc\uc544(\ub9c8\ucf00\ud305)\", \"base\": 1000000, \"inc\": 0, \"incType\": \"amount\", \"showInc\": true}]}");}catch(e){}
 })();
 
+// ====================== 접속 제한 (사무실 IP) + 관리자 승인 ======================
+// 직원 계정: 사무실 IP에서는 바로 접속. 그 외(외부)는 관리자 승인 후 접속. 관리자(admin)는 제한 없음.
+var OFFICE_IPS=["218.155.203.39"];
+var ACCESS_TTL_MS=24*60*60*1000;
+var ALLOW_MOBILE_BYPASS=true; // 고객관리와 동일: 휴대폰은 바로 접속 (false로 바꾸면 휴대폰도 승인 필요)
+var NTFY_TOPIC="gwanggyo-crm-I9cOz4Ts5EEejqKOOnv6lCp7";
+var SITE_URL="https://kminh0704-alt.github.io/Contract-Management/";
+var _accessDocId=null,_accessPollTimer=null,_accessWatchTimer=null,_adminAccessTimer=null;
+var _loginBusy=false,_adminPendingCount=-1,_gateSeq=0;
+
+function _isMobileDevice(){
+  var ua=navigator.userAgent||"";
+  if(/Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua))return true;
+  if(navigator.userAgentData&&navigator.userAgentData.mobile)return true;
+  if(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1)return true;
+  return false;
+}
+function _getDeviceId(){
+  try{
+    var d=localStorage.getItem("ggDeviceId");
+    if(!d){d="d"+Date.now().toString(36)+Math.random().toString(36).slice(2,10);localStorage.setItem("ggDeviceId",d);}
+    return d;
+  }catch(e){return "nodev";}
+}
+function _getPublicIp(){
+  var withTimeout=function(url,parse){return new Promise(function(resolve,reject){
+    var ctl=new AbortController();
+    var t=setTimeout(function(){ctl.abort();reject(new Error("timeout"));},4000);
+    fetch(url,{signal:ctl.signal,cache:"no-store"}).then(function(r){return r.text();}).then(function(txt){
+      clearTimeout(t);var ip=parse(txt);if(ip)resolve(ip);else reject(new Error("parse"));
+    }).catch(function(e){clearTimeout(t);reject(e);});
+  });};
+  var jsonIp=function(txt){try{return (JSON.parse(txt).ip||"").trim();}catch(e){return "";}};
+  var traceIp=function(txt){var m=/^ip=(.+)$/m.exec(txt);return m?m[1].trim():"";};
+  var tasks=[
+    withTimeout("https://api.ipify.org?format=json",jsonIp),
+    withTimeout("https://api64.ipify.org?format=json",jsonIp),
+    withTimeout("https://www.cloudflare.com/cdn-cgi/trace",traceIp)
+  ];
+  return new Promise(function(resolve){
+    var left=tasks.length;
+    tasks.forEach(function(p){p.then(function(ip){resolve(ip);},function(){if(--left===0)resolve("");});});
+  });
+}
+function _waitAccessApi(){
+  return new Promise(function(resolve,reject){
+    var n=0;
+    (function chk(){
+      if(window.fbAccessGet&&window.fbAccessSet&&window.fbAccessList){resolve();return;}
+      if(++n>150){reject(new Error("fb"));return;}
+      setTimeout(chk,100);
+    })();
+  });
+}
+function _mk(tag,css,text){var e=document.createElement(tag);if(css)e.style.cssText=css;if(text!=null)e.textContent=text;return e;}
+
+// 승인 대기 화면 (#app 밖에 띄움)
+function _showAccessPending(msg,ip,isError,btnLabel){
+  var scr=document.getElementById("access-screen");
+  if(!scr){
+    scr=_mk("div","position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(240,242,245,.98);z-index:100000;display:flex;align-items:center;justify-content:center;");
+    scr.id="access-screen";
+    var box=_mk("div","background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(0,0,0,.12);padding:36px 32px 28px;width:340px;max-width:92vw;text-align:center;font-family:inherit;");
+    box.appendChild(_mk("div","font-size:30px;margin-bottom:8px;","🔒"));
+    box.appendChild(_mk("div","font-size:17px;font-weight:800;color:#1a1d2e;margin-bottom:6px;","사무실 외부 접속"));
+    box.appendChild(_mk("div","font-size:13px;color:#6b7280;line-height:1.6;margin-bottom:16px;","관리자 승인 후 사용할 수 있습니다. 승인되면 자동으로 열립니다."));
+    var m=_mk("div","border-radius:10px;padding:11px;font-size:13px;margin-bottom:12px;");m.id="access-msg";box.appendChild(m);
+    var ipd=_mk("div","font-size:12px;color:#9ca3af;margin-bottom:14px;");ipd.id="access-ip";box.appendChild(ipd);
+    var b=_mk("button","width:100%;padding:11px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;","요청 취소");
+    b.id="access-cancel";b.onclick=cancelAccessRequest;box.appendChild(b);
+    scr.appendChild(box);document.body.appendChild(scr);
+  }
+  var mm=document.getElementById("access-msg");
+  mm.textContent=msg;
+  mm.style.background=isError?"#fee2e2":"#fef3c7";
+  mm.style.color=isError?"#b91c1c":"#b45309";
+  document.getElementById("access-ip").textContent=ip?("접속 IP "+ip):"";
+  document.getElementById("access-cancel").textContent=btnLabel||(isError?"닫기":"요청 취소");
+  scr.style.display="flex";
+}
+function _hideAccessPending(){
+  if(_accessPollTimer){clearInterval(_accessPollTimer);_accessPollTimer=null;}
+  var scr=document.getElementById("access-screen");
+  if(scr)scr.style.display="none";
+}
+function cancelAccessRequest(){
+  _gateSeq++;
+  _hideAccessPending();
+  if(_accessDocId&&window.fbAccessSet){
+    try{window.fbAccessSet(_accessDocId,{status:"cancelled"}).catch(function(){});}catch(e){}
+  }
+  _accessDocId=null;_loginBusy=false;
+  G.user=null;
+  try{localStorage.removeItem("gg_login_id");}catch(e){}
+  R();
+}
+function _sendApprovalPush(name){
+  try{
+    var t=new Date();
+    var hm=t.getHours()+":"+String(t.getMinutes()).padStart(2,"0");
+    fetch("https://ntfy.sh/",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({topic:NTFY_TOPIC,title:"계약관리 접속 승인 요청",message:name+" · "+hm+" · 사무실 외부 접속",click:SITE_URL,priority:4,tags:["lock"]})
+    }).catch(function(){});
+  }catch(e){}
+}
+
+// 로그인 후 접속 가능 여부 판단 → 가능하면 입장, 아니면 승인 대기
+async function _gateAndEnter(acc,isRestore){
+  var seq=++_gateSeq;
+  try{
+    if(acc.role==="admin"||(ALLOW_MOBILE_BYPASS&&_isMobileDevice())){_finishLogin(acc,0);return;}
+    if(isRestore)_showAccessPending("접속 확인 중…","",false,"취소");
+    var ip=await _getPublicIp();
+    if(seq!==_gateSeq)return;
+    if(ip&&OFFICE_IPS.indexOf(ip)>=0){_finishLogin(acc,0);return;}
+    // 사무실 외부 → 관리자 승인 필요
+    var docId=acc.id+"_"+_getDeviceId();
+    _accessDocId=docId;
+    var cur=null;
+    try{await _waitAccessApi();cur=await window.fbAccessGet(docId);}
+    catch(e){
+      if(seq!==_gateSeq)return;
+      _showAccessPending("승인 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",ip,true);
+      return;
+    }
+    if(seq!==_gateSeq)return;
+    if(cur&&cur.status==="approved"&&cur.approvedUntil>Date.now()){_finishLogin(acc,cur.approvedUntil);return;}
+    var recentPending=cur&&cur.status==="pending"&&(Date.now()-(cur.requestedAt||0)<120000);
+    try{
+      await window.fbAccessSet(docId,{userId:acc.id,name:acc.name,ip:ip||"확인불가",deviceId:_getDeviceId(),ua:(navigator.userAgent||"").slice(0,120),status:"pending",requestedAt:Date.now(),approvedUntil:0});
+    }catch(e){
+      if(seq!==_gateSeq)return;
+      _showAccessPending("승인 요청을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.",ip,true);
+      return;
+    }
+    if(seq!==_gateSeq)return;
+    if(!recentPending)_sendApprovalPush(acc.name);
+    _showAccessPending("⏳ 승인 대기 중… ("+acc.name+")",ip,false);
+    if(_accessPollTimer)clearInterval(_accessPollTimer);
+    _accessPollTimer=setInterval(async function(){
+      if(seq!==_gateSeq){clearInterval(_accessPollTimer);_accessPollTimer=null;return;}
+      try{
+        var d=await window.fbAccessGet(docId);
+        if(seq!==_gateSeq||!d)return;
+        if(d.status==="approved"&&d.approvedUntil>Date.now()){
+          _hideAccessPending();
+          _finishLogin(acc,d.approvedUntil);
+        }else if(d.status==="denied"){
+          clearInterval(_accessPollTimer);_accessPollTimer=null;
+          _showAccessPending("관리자가 접속을 거절했습니다.",ip,true);
+        }
+      }catch(e){}
+    },3000);
+  }finally{ if(seq===_gateSeq&&!_accessPollTimer)_loginBusy=false; }
+}
+
+function _finishLogin(acc,approvedUntil){
+  _hideAccessPending();
+  _loginBusy=false;
+  G.user=acc;
+  try{localStorage.setItem("gg_login_id",acc.id);}catch(e){}
+  R();
+  if(approvedUntil)_startAccessWatch(approvedUntil);
+}
+function _forceLogout(msg){
+  alert(msg);
+  G.user=null;
+  try{localStorage.removeItem("gg_login_id");}catch(e){}
+  accessCleanup();ddReset();_history=[];R();
+}
+// 승인 만료/해제 감시 (사무실 외부 접속)
+function _startAccessWatch(approvedUntil){
+  if(_accessWatchTimer)clearInterval(_accessWatchTimer);
+  var until=approvedUntil;
+  _accessWatchTimer=setInterval(async function(){
+    if(!G.user)return;
+    if(Date.now()>until){_forceLogout("접속 승인 시간이 만료되어 로그아웃되었습니다.");return;}
+    try{
+      var d=await window.fbAccessGet(_accessDocId);
+      if(!G.user)return;
+      if(!d||d.status!=="approved"){_forceLogout("관리자가 접속을 해제하여 로그아웃되었습니다.");}
+      else if(d.approvedUntil){until=d.approvedUntil;}
+    }catch(e){}
+  },20000);
+}
+function accessCleanup(){
+  _gateSeq++;
+  if(_accessWatchTimer){clearInterval(_accessWatchTimer);_accessWatchTimer=null;}
+  if(_adminAccessTimer){clearInterval(_adminAccessTimer);_adminAccessTimer=null;}
+  _adminPendingCount=-1;_loginBusy=false;
+  _hideAccessPending();
+  closeAccessAdmin();
+}
+
+// ── 관리자: 접속 승인 목록 ──
+function _applyAccessBadge(){
+  var btn=g("access-btn"),bd=g("access-badge");
+  if(!btn||!bd)return;
+  var n=_adminPendingCount>0?_adminPendingCount:0;
+  bd.textContent=n;
+  btn.style.background=n?"#fee2e2":"";
+  btn.style.color=n?"#b91c1c":"";
+}
+function _startAdminAccessPoll(){
+  if(_adminAccessTimer)return;
+  if(!G.user||G.user.role!=="admin")return;
+  var tick=async function(){
+    if(!G.user||G.user.role!=="admin")return;
+    var list;
+    try{await _waitAccessApi();list=await window.fbAccessList();}catch(e){return;}
+    var pend=list.filter(function(x){return x.status==="pending";}).length;
+    var first=(_adminPendingCount===-1);
+    _adminPendingCount=pend;
+    _applyAccessBadge();
+    if(pend>0&&first&&!document.getElementById("access-admin-modal"))openAccessAdmin();
+    if(document.getElementById("access-admin-modal"))_renderAccessAdmin(list);
+  };
+  tick();
+  _adminAccessTimer=setInterval(tick,8000);
+}
+async function openAccessAdmin(){
+  if(!G.user||G.user.role!=="admin")return;
+  if(document.getElementById("access-admin-modal"))return;
+  var ov=_mk("div","position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:100001;display:flex;align-items:center;justify-content:center;");
+  ov.id="access-admin-modal";
+  ov.addEventListener("click",function(e){if(e.target===ov)closeAccessAdmin();});
+  var box=_mk("div","background:#fff;border-radius:16px;padding:22px;width:420px;max-width:94vw;max-height:80vh;overflow:auto;font-family:inherit;");
+  box.id="access-admin-box";
+  ov.appendChild(box);document.body.appendChild(ov);
+  var list=[];
+  try{await _waitAccessApi();list=await window.fbAccessList();}catch(e){}
+  _renderAccessAdmin(list);
+}
+function closeAccessAdmin(){
+  var ov=document.getElementById("access-admin-modal");
+  if(ov)ov.remove();
+}
+function _renderAccessAdmin(list){
+  var box=document.getElementById("access-admin-box");
+  if(!box)return;
+  var now=Date.now();
+  var pend=list.filter(function(x){return x.status==="pending";}).sort(function(a,b){return (b.requestedAt||0)-(a.requestedAt||0);});
+  var appr=list.filter(function(x){return x.status==="approved"&&x.approvedUntil>now;}).sort(function(a,b){return (b.approvedUntil||0)-(a.approvedUntil||0);});
+  box.textContent="";
+  var head=_mk("div","display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;");
+  head.appendChild(_mk("div","font-size:16px;font-weight:800;color:#1a1d2e;","🔔 접속 승인"));
+  var x=_mk("button","border:none;background:none;font-size:20px;cursor:pointer;color:#6b7280;","×");
+  x.onclick=closeAccessAdmin;head.appendChild(x);
+  box.appendChild(head);
+  var fmt=function(t){var d=new Date(t);return (d.getMonth()+1)+"/"+d.getDate()+" "+d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");};
+  var row=function(r,isPending){
+    var w=_mk("div","border:1px solid #e5e7eb;border-radius:10px;padding:11px 12px;margin-bottom:8px;");
+    w.appendChild(_mk("div","font-size:14px;font-weight:700;color:#1a1d2e;",r.name||r.userId));
+    w.appendChild(_mk("div","font-size:12px;color:#6b7280;margin:2px 0 8px;",isPending
+      ?("요청 "+fmt(r.requestedAt||now)+" · IP "+(r.ip||"-"))
+      :("~ "+fmt(r.approvedUntil)+" 까지 · IP "+(r.ip||"-"))));
+    var bar=_mk("div","display:flex;gap:8px;");
+    var setSt=async function(patch){
+      try{await window.fbAccessSet(r._id,patch);}
+      catch(e){alert("처리하지 못했습니다. 다시 시도해 주세요.");return;}
+      var l=[];try{l=await window.fbAccessList();}catch(e2){}
+      _adminPendingCount=l.filter(function(z){return z.status==="pending";}).length;
+      _applyAccessBadge();
+      _renderAccessAdmin(l);
+    };
+    if(isPending){
+      var ok=_mk("button","flex:1;padding:8px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer;font-family:inherit;","승인 (24시간)");
+      ok.onclick=function(){setSt({status:"approved",approvedAt:Date.now(),approvedUntil:Date.now()+ACCESS_TTL_MS});};
+      var no=_mk("button","flex:1;padding:8px;border:none;border-radius:8px;background:#f3f4f6;color:#374151;font-weight:700;cursor:pointer;font-family:inherit;","거절");
+      no.onclick=function(){setSt({status:"denied"});};
+      bar.appendChild(ok);bar.appendChild(no);
+    }else{
+      var rv=_mk("button","flex:1;padding:8px;border:none;border-radius:8px;background:#fee2e2;color:#b91c1c;font-weight:700;cursor:pointer;font-family:inherit;","접속 해제");
+      rv.onclick=function(){setSt({status:"revoked",approvedUntil:0});};
+      bar.appendChild(rv);
+    }
+    w.appendChild(bar);
+    return w;
+  };
+  box.appendChild(_mk("div","font-size:12px;font-weight:700;color:#b45309;margin:6px 0;","승인 대기 ("+pend.length+")"));
+  if(!pend.length)box.appendChild(_mk("div","font-size:12px;color:#9ca3af;margin-bottom:8px;","대기 중인 요청이 없습니다."));
+  pend.forEach(function(r){box.appendChild(row(r,true));});
+  box.appendChild(_mk("div","font-size:12px;font-weight:700;color:#16a34a;margin:12px 0 6px;","승인된 기기 ("+appr.length+")"));
+  if(!appr.length)box.appendChild(_mk("div","font-size:12px;color:#9ca3af;","승인된 기기가 없습니다."));
+  appr.forEach(function(r){box.appendChild(row(r,false));});
+}
+
 // ====================== 시작 ======================
 R();
+if(window._restoreAcc){var _ra=window._restoreAcc;window._restoreAcc=null;_gateAndEnter(_ra,true);}
 </script>
 </body>
 </html>
